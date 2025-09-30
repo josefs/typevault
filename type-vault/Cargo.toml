@@ -1,0 +1,11 @@
+[package]
+name = "type-vault"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sled = "0.34.7"
+serde = { version = "1.0", features = ["derive"] }
+bincode = {version = "2.0.1", features = ["serde"]}
+type-vault-trait = { path = "../type-vault-trait" }
+type-vault-trait-derive = { path = "../type-vault-trait-derive" }

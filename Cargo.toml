@@ -1,0 +1,2 @@
+[workspace]
+members = ["type-vault-trait", "type-vault-trait-derive", "type-vault"]

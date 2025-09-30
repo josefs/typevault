@@ -1,0 +1,9 @@
+[package]
+name = "type-vault-trait"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+bincode = { version = "2.0.1", features = ["serde"] }
