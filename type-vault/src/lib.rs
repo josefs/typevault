@@ -58,7 +58,7 @@ impl TypeVault {
             //TODO: We want to report an error instead of silently ignoring deserialization failures.
             .filter_map(move |res: Result<(sled::IVec, sled::IVec), sled::Error>| {
                 let (data, id_bytes) = res.expect("Failed to read from value_to_id_map");
-                let id = bincode::decode_from_slice(&id_bytes, BINCODE_CONFIG).unwrap().0;
+                let id = bincode::serde::decode_from_slice(&id_bytes, BINCODE_CONFIG).unwrap().0;
                 let lookup_id = |id_needle| {
                     match self.lookup_id(id_needle) {
                         Some(data) => {

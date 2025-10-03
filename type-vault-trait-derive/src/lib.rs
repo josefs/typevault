@@ -58,7 +58,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
             dest.hash(&mut s);
             s.finish()
           };
-          result.extend(bincode::encode_to_vec(#field_name, BINCODE_CONFIG).unwrap());
+          result.extend(bincode::serde::encode_to_vec(#field_name, BINCODE_CONFIG).unwrap());
         }
       } else {
         quote! {
