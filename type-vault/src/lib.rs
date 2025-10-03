@@ -59,17 +59,7 @@ impl TypeVault {
             .filter_map(move |res: Result<(sled::IVec, sled::IVec), sled::Error>| {
                 let (data, id_bytes) = res.expect("Failed to read from value_to_id_map");
                 let id = bincode::serde::decode_from_slice(&id_bytes, BINCODE_CONFIG).unwrap().0;
-                let lookup_id = |id_needle| {
-                    match self.lookup_id(id_needle) {
-                        Some(data) => {
-                            Some(data)
-                        },
-                        None => {
-                            None
-                        },
-                    }
-                };
-                let deserialized = deserialize_type::<T>(&data, &lookup_id);
+                let deserialized = deserialize_type::<T>(&data, &|id_needle| self.lookup_id(id_needle));
                 let deserialized = match deserialized {
                     None => {
                         eprintln!("Failed to deserialize data with ID {}", id);
