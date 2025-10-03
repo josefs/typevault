@@ -31,13 +31,13 @@ impl TypeVault {
         }
     }
 
-    pub fn clear(&self) -> sled::Result<()> {
+    pub fn clear(&self) -> Result<(), sled::Error> {
         self.id_to_value_map.clear()?;
         self.value_to_id_map.clear()?;
         Ok(())
     }
 
-    pub fn put<T:VaultType>(&self, value: &T) -> sled::Result<()> {
+    pub fn put<T:VaultType>(&self, value: &T) -> Result<(), sled::Error> {
         let data = serialize_type(value, &self.type_ids);
         for (val, id) in data {
             self.value_to_id_map.insert(&val, &id.to_be_bytes())?;
