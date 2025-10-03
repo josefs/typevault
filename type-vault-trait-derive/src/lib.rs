@@ -2,6 +2,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput, Data, Fields, Type};
 
+
 #[proc_macro_derive(VaultType)]
 pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
@@ -12,6 +13,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
     let mut types = Vec::new();
     let mut unmodified_fields = Vec::new();
     let mut modified_fields = Vec::new();
+    let mut modified_field_types = Vec::new();
     let mut is_modified_field: Vec<bool> = Vec::new();
     let fields: Vec<_> = match data_struct.fields {
       Fields::Named(fields_named) => fields_named.named.into_iter().map(|mut field| {
@@ -24,6 +26,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
         ) {
           types.push(field.ty.clone());
           modified_fields.push(field.ident.as_ref().unwrap().clone());
+          modified_field_types.push(field.ty.clone());
           field.ty = syn::parse_quote!(ValueId);
           is_modified_field.push(true);
         } else {
@@ -49,7 +52,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
         quote! {
           let mut dest = vec![];
           // Ignore the nested fields. We only care about the hash.
-          self.#field_name.serialize_into(&mut vec![], &mut dest);
+          self.#field_name.serialize_into(&mut vec![], &mut dest, type_map);
           let #field_name = {
             let mut s = DefaultHasher::new();
             dest.hash(&mut s);
@@ -73,10 +76,11 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
       impl VaultType for #name {
         type InnerVaultType = (#new_name #(,#types)*);
 
-        fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>) {
+
+        fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<std::any::TypeId,u8>) {
           #(
             let mut dest_nested = vec![];
-            self.#modified_fields.serialize_into(nested_dest, &mut dest_nested);
+            self.#modified_fields.serialize_into(nested_dest, &mut dest_nested, type_map);
             let #modified_fields_hash = {
               let mut s = DefaultHasher::new();
               dest_nested.hash(&mut s);
@@ -92,11 +96,12 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
             Ok(vec) => vec,
             Err(err) => panic!("bincode failed with: {:?}", err),
           };
+          dest.append(&mut vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()]);
           dest.append(&mut serialized);
         }
 
-        fn serialize_prefix(&self, fields_in_prefix: u64) -> Vec<u8> {
-          let mut result = vec![];
+        fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &HashMap<std::any::TypeId,u8>) -> Vec<u8> {
+          let mut result = vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()];
           let mut remaining_fields = fields_in_prefix;
 
           #(
@@ -113,9 +118,10 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
 
         fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn(u64) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
           let (new_struct, bytes_consumed): (#new_name, _) =
-            match bincode::serde::decode_from_slice(data, BINCODE_CONFIG) {
+            //TODO: Check that the type ID matches
+            match bincode::serde::decode_from_slice(&data[1..], BINCODE_CONFIG) {
               Err(_) => {
-                eprintln!("Failed to decode struct of type {}", stringify!(#new_name));
+                eprintln!("Failed to decode struct of type {}, data: {:?}", stringify!(#new_name), &data);
                 return None
               },
               Ok((strct, bytes_consumed)) => (strct, bytes_consumed),

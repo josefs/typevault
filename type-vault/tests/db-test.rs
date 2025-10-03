@@ -2,6 +2,8 @@ use type_vault_trait::*;
 use type_vault_trait_derive::VaultType;
 
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::collections::HashMap;
+use std::any::TypeId;
 
 use serde::{Deserialize, Serialize};
 use bincode; // For serialization
@@ -25,9 +27,6 @@ fn test_db_storage() {
     let struct1 = TestStruct { field: 42, base_field: Box::new(BaseStruct { foo: 10 }), rec_field : None };
     let struct2 = TestStruct { field: 42, base_field: Box::new(BaseStruct { foo: 20 }), rec_field : None };
     let struct3 = TestStruct { field: 43, base_field: Box::new(BaseStruct { foo: 10 }), rec_field : Some(Box::new(struct1.clone())) };
-    println!("Struct1: {:?}", serialize_type(& struct1));
-    println!("Struct2: {:?}", serialize_type(& struct2));
-    println!("Struct3: {:?}", serialize_type(& struct3));
 
     // Set up DB.
     let db = new_type_vault!(std::path::Path::new("test_db"), TestStruct, BaseStruct);
@@ -36,12 +35,16 @@ fn test_db_storage() {
     db.put(&struct2).unwrap();
     db.put(&struct3).unwrap();
     db.debug_print();
-    db.debug_scan_primitive(vec![42u8]).for_each(|(value, id) | {
+    // The first byte 0u8 is the type id for TestStruct, the second byte 42u8 is the value of the `field` field.
+    let mut visited = 0;
+    db.debug_scan_primitive(vec![0u8, 42u8]).for_each(|(value, id) | {
         println!("Scanned Value with ID {}: {:?}", id, value);
+        visited += 1;
     });
+    assert_eq!(visited, 2); // At least struct1 and struct2 should match
 
-    // Roundtripping, without checking ids
-    let serialized: Vec<(Vec<u8>, u64)> = serialize_type(& struct1);
+    // Roundtripping
+    let serialized: Vec<(Vec<u8>, u64)> = serialize_type(& struct1, &db.type_ids);
     let lookup_id = |id| {
         for (vec, hash) in serialized.iter() {
             if *hash == id {
@@ -66,7 +69,7 @@ fn test_db_storage() {
     let scan_result: Vec<(Box<TestStruct>, ValueId)> =
       db.scan(TestStruct { field: 42, base_field: Box::new(BaseStruct { foo: 0 }), rec_field : None }, 1).collect();
     assert_eq!(scan_result.into_iter().map(|(value, _id)| *value).collect::<Vec<TestStruct>>()
-      , vec![struct1, struct2]);
+      , vec![struct1, struct2]); //TODO: Make the test robust to ordering
     let scan_result2: Vec<(Box<TestStruct>, ValueId)> =
       db.scan(TestStruct { field: 43, base_field: Box::new(BaseStruct { foo: 10 }), rec_field : None }, 2).collect();
     assert_eq!(scan_result2.into_iter().map(|(value, _id)| *value).collect::<Vec<TestStruct>>()

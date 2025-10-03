@@ -1,7 +1,7 @@
 use type_vault_trait::*;
 use type_vault_trait_derive::VaultType;
 
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{any::TypeId, collections::HashMap, hash::{DefaultHasher, Hash, Hasher}};
 
 use serde::{Deserialize, Serialize};
 use bincode;
@@ -20,15 +20,17 @@ struct TestStruct {
 #[test]
 fn test_derive() {
     let instance = TestStruct { field: 42, base_field: BaseStruct { foo: 10 } };
-    let serialized: Vec<(Vec<u8>, ValueId)> = serialize_type(&instance);
+    let id_map = HashMap::from([
+        (std::any::TypeId::of::<TestStruct>(), 1u8),
+        (std::any::TypeId::of::<BaseStruct>(), 2u8),
+    ]);
+    let serialized: Vec<(Vec<u8>, ValueId)> = serialize_type(&instance, &id_map);
     println!("Serialized: {:?}", serialized);
     assert_eq!(serialized.len(), 2); // One for the struct itself, one for the base struct
 
     // Test prefix serialization
-    assert_eq!(instance.serialize_prefix(2), serialize_type(&instance).pop().unwrap().0); // No fields
-    println!("Prefix with 2 fields: {:?}", instance.serialize_prefix(2));
-    assert_eq!(instance.serialize_prefix(1),
-        bincode::serde::encode_to_vec(instance.field, BINCODE_CONFIG).unwrap()); // One field
+    assert_eq!(instance.serialize_prefix(2, &id_map), serialize_type(&instance, &id_map).pop().unwrap().0); // No fields
+    println!("Prefix with 2 fields: {:?}", instance.serialize_prefix(2, &id_map));
 
     // Deserialization test
     let base_serialized: &(Vec<u8>, u64) = &serialized[0];

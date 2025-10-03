@@ -6,7 +6,7 @@ pub struct TypeVault {
   base_db: sled::Db,
   id_to_value_map: sled::Tree,
   value_to_id_map: sled::Tree,
-  type_ids: HashMap<TypeId,u8>,
+  pub type_ids: HashMap<TypeId,u8>,
 }
 
 #[macro_export]
@@ -38,7 +38,7 @@ impl TypeVault {
     }
 
     pub fn put<T:VaultType>(&self, value: &T) -> sled::Result<()> {
-        let data = serialize_type(value);
+        let data = serialize_type(value, &self.type_ids);
         for (val, id) in data {
             self.value_to_id_map.insert(&val, &id.to_be_bytes())?;
             self.id_to_value_map.insert(id.to_be_bytes(), val)?;
@@ -47,19 +47,18 @@ impl TypeVault {
     }
 
     pub fn scan<'a, T: VaultType>(&'a self, value: T, fields_in_prefix: u64) -> impl Iterator<Item = (Box<T>, u64)> + 'a {
-        let prefix = value.serialize_prefix(fields_in_prefix);
+        let prefix = value.serialize_prefix(fields_in_prefix, &self.type_ids);
         self.debug_scan(prefix)
     }
 
     // Shouldn't be public
     pub fn debug_scan<'a, T:VaultType>(&'a self, prefix : Vec<u8>) -> impl Iterator<Item = (Box<T>, u64)>  + 'a {
-        let bincode_config = bincode::config::standard().with_big_endian();
         self.value_to_id_map
             .scan_prefix(prefix)
             //TODO: We want to report an error instead of silently ignoring deserialization failures.
             .filter_map(move |res: Result<(sled::IVec, sled::IVec), sled::Error>| {
                 let (data, id_bytes) = res.expect("Failed to read from value_to_id_map");
-                let id = bincode::decode_from_slice(&id_bytes, bincode_config).unwrap().0;
+                let id = bincode::decode_from_slice(&id_bytes, BINCODE_CONFIG).unwrap().0;
                 let lookup_id = |id_needle| {
                     match self.lookup_id(id_needle) {
                         Some(data) => {
@@ -70,13 +69,13 @@ impl TypeVault {
                         },
                     }
                 };
-                let deserialized = T::deserialize_value(&data, &lookup_id);
+                let deserialized = deserialize_type::<T>(&data, &lookup_id);
                 let deserialized = match deserialized {
                     None => {
                         eprintln!("Failed to deserialize data with ID {}", id);
                         return None;
                     },
-                    Some((_,d)) => d,
+                    Some(d) => d,
                 };
                 Some ((Box::new(deserialized), id))
             })
