@@ -17,16 +17,11 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
     let mut is_modified_field: Vec<bool> = Vec::new();
     let fields: Vec<_> = match data_struct.fields {
       Fields::Named(fields_named) => fields_named.named.into_iter().map(|mut field| {
-        if !matches!(
-          field.ty,
-          Type::Path(ref type_path) if type_path.path.is_ident("i32")
-            || type_path.path.is_ident("i64")
-            || type_path.path.is_ident("u32")
-            || type_path.path.is_ident("u64")
-        ) {
-          types.push(field.ty.clone());
+        let ty : Type = field.ty.clone();
+        if !is_primitive_type(&ty) {
+          types.push(ty.clone());
           modified_fields.push(field.ident.as_ref().unwrap().clone());
-          modified_field_types.push(field.ty.clone());
+          modified_field_types.push(ty.clone());
           field.ty = syn::parse_quote!(ValueId);
           is_modified_field.push(true);
         } else {
@@ -142,4 +137,24 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
   };
 
   TokenStream::from(expanded)
+}
+
+fn is_primitive_type(ty: &Type) -> bool {
+  matches!(
+    ty,
+    Type::Path(ref type_path)
+      if type_path.path.is_ident("u8")
+      || type_path.path.is_ident("u16")
+      || type_path.path.is_ident("u32")
+      || type_path.path.is_ident("u64")
+      || type_path.path.is_ident("u128")
+      || type_path.path.is_ident("i8")
+      || type_path.path.is_ident("i16")
+      || type_path.path.is_ident("i32")
+      || type_path.path.is_ident("i64")
+      || type_path.path.is_ident("i128")
+      || type_path.path.is_ident("f32")
+      || type_path.path.is_ident("f64")
+      || type_path.path.is_ident("bool")
+  )
 }

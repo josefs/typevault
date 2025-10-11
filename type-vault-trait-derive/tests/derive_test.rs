@@ -13,13 +13,21 @@ struct BaseStruct {
 
 #[derive(Deserialize, VaultType)]
 struct TestStruct {
-    field: i32,
+    i32_field: i32,
+    f64_field: f64,
+    bool_field: bool,
     base_field: BaseStruct,
 }
 
 #[test]
 fn test_derive() {
-    let test_struct = TestStruct { field: 42, base_field: BaseStruct { foo: 10 } };
+    let test_struct =
+        TestStruct {
+            i32_field: 42,
+            f64_field: 0.1,
+            bool_field: true,
+            base_field: BaseStruct { foo: 10 }
+        };
     let id_map = HashMap::from([
         (std::any::TypeId::of::<TestStruct>(), 1u8),
         (std::any::TypeId::of::<BaseStruct>(), 2u8),
@@ -29,8 +37,8 @@ fn test_derive() {
     assert_eq!(serialized.len(), 2); // One for the struct itself, one for the base struct
 
     // Test prefix serialization
-    assert_eq!(test_struct.serialize_prefix(2, &id_map), serialize_type(&test_struct, &id_map).pop().unwrap().0);
-    println!("Prefix with 2 fields: {:?}", test_struct.serialize_prefix(2, &id_map));
+    assert_eq!(test_struct.serialize_prefix(4, &id_map), serialize_type(&test_struct, &id_map).pop().unwrap().0);
+    println!("Prefix with all fields: {:?}", test_struct.serialize_prefix(4, &id_map));
 
     // Deserialization test
     let base_serialized: &(Vec<u8>, ValueId) = &serialized[0];
@@ -42,7 +50,9 @@ fn test_derive() {
     match TestStruct::deserialize_value(&serialized[1].0, &lookup_id) {
     Some((_,deserialized)) => {
             // Check that the deserialized instance matches the original
-            assert_eq!(deserialized.field, test_struct.field);
+            assert_eq!(deserialized.i32_field, test_struct.i32_field);
+            assert_eq!(deserialized.f64_field, test_struct.f64_field);
+            assert_eq!(deserialized.bool_field, test_struct.bool_field);
             assert_eq!(deserialized.base_field.foo, test_struct.base_field.foo);
     },
         None => panic!("Deserialization failed"),

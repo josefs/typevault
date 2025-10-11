@@ -121,3 +121,18 @@ impl<T: VaultType> VaultType for Option<T> {
         }
     }
 }
+
+impl VaultType for () {
+    type InnerVaultType = ();
+    fn serialize_into(&self, _nested_dest: &mut Vec<(Vec<u8>, ValueId)>, _dest: &mut Vec<u8>, _type_map: &HashMap<TypeId,u8>) {
+        return
+    }
+
+    fn serialize_prefix(&self, _fields_in_prefix: u64, _type_map: &HashMap<TypeId,u8>) -> Vec<u8> {
+        vec![]
+    }
+
+    fn deserialize_value<'a>(data: &'a [u8], _lookup_id: &dyn Fn (ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8], Self)> where Self: Sized {
+        Some((data, ()))
+    }
+}
