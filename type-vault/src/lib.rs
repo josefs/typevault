@@ -40,19 +40,19 @@ impl TypeVault {
     pub fn put<T:VaultType>(&self, value: &T) -> Result<(), sled::Error> {
         let data = serialize_type(value, &self.type_ids);
         for (val, id) in data {
-            self.value_to_id_map.insert(&val, &id.to_be_bytes())?;
-            self.id_to_value_map.insert(id.to_be_bytes(), val)?;
+            self.value_to_id_map.insert(&val, &id)?;
+            self.id_to_value_map.insert(id, val)?;
         }
         Ok(())
     }
 
-    pub fn scan<'a, T: VaultType>(&'a self, value: T, fields_in_prefix: u64) -> impl Iterator<Item = (Box<T>, u64)> + 'a {
+    pub fn scan<'a, T: VaultType>(&'a self, value: T, fields_in_prefix: u64) -> impl Iterator<Item = (Box<T>, ValueId)> + 'a {
         let prefix = value.serialize_prefix(fields_in_prefix, &self.type_ids);
         self.debug_scan(prefix)
     }
 
     // Shouldn't be public
-    pub fn debug_scan<'a, T:VaultType>(&'a self, prefix : Vec<u8>) -> impl Iterator<Item = (Box<T>, u64)>  + 'a {
+    pub fn debug_scan<'a, T:VaultType>(&'a self, prefix : Vec<u8>) -> impl Iterator<Item = (Box<T>, ValueId)>  + 'a {
         self.value_to_id_map
             .scan_prefix(prefix)
             //TODO: We want to report an error instead of silently ignoring deserialization failures.
@@ -62,7 +62,7 @@ impl TypeVault {
                 let deserialized = deserialize_type::<T>(&data, &|id_needle| self.lookup_id(id_needle));
                 let deserialized = match deserialized {
                     None => {
-                        eprintln!("Failed to deserialize data with ID {}", id);
+                        eprintln!("Failed to deserialize data with ID {:?}", id);
                         return None;
                     },
                     Some(d) => d,
@@ -71,15 +71,14 @@ impl TypeVault {
             })
     }
 
-    pub fn debug_scan_primitive(&self, prefix: Vec<u8>) -> impl Iterator<Item = (Vec<u8>, u64)> {
+    pub fn debug_scan_primitive(&self, prefix: Vec<u8>) -> impl Iterator<Item = (Vec<u8>, ValueId)> {
         self.value_to_id_map
             .scan_prefix(prefix)
             .map(|res: Result<(sled::IVec, sled::IVec), sled::Error>| {
                 let (value_data, id_bytes) = res.expect("Failed to read from value_to_id_map");
                 let mut id_array = [0u8; 8];
                 id_array.copy_from_slice(&id_bytes);
-                let id = u64::from_be_bytes(id_array);
-                (value_data.to_vec(), id)
+                (value_data.to_vec(), id_array)
             })
     }
 
@@ -89,8 +88,7 @@ impl TypeVault {
             let (key, value) = item.expect("Failed to read from value_to_id_map");
             let mut value_array = [0u8; 8];
             value_array.copy_from_slice(&value);
-            let id = u64::from_be_bytes(value_array);
-            println!("Value : {:?}, ID: {}", key, id);
+            println!("Value : {:?}, ID: {:?}", key, value_array);
         }
         println!("ID to Value map:");
         for item in self.id_to_value_map.iter() {
@@ -102,8 +100,8 @@ impl TypeVault {
         }
     }
 
-    fn lookup_id(&self, id: u64) -> Option<Vec<u8>> {
-        if let Ok(Some(id_bytes)) = self.id_to_value_map.get(id.to_be_bytes()) {
+    fn lookup_id(&self, id: ValueId) -> Option<Vec<u8>> {
+        if let Ok(Some(id_bytes)) = self.id_to_value_map.get(id) {
             Some(id_bytes.to_vec())
         } else {
             None

@@ -53,11 +53,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
           let mut dest = vec![];
           // Ignore the nested fields. We only care about the hash.
           self.#field_name.serialize_into(&mut vec![], &mut dest, type_map);
-          let #field_name = {
-            let mut s = DefaultHasher::new();
-            dest.hash(&mut s);
-            s.finish()
-          };
+          let #field_name = value_id_of(&dest);
           result.extend(bincode::serde::encode_to_vec(#field_name, BINCODE_CONFIG).unwrap());
         }
       } else {
@@ -81,11 +77,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
           #(
             let mut dest_nested = vec![];
             self.#modified_fields.serialize_into(nested_dest, &mut dest_nested, type_map);
-            let #modified_fields_hash = {
-              let mut s = DefaultHasher::new();
-              dest_nested.hash(&mut s);
-              s.finish()
-            };
+            let #modified_fields_hash = value_id_of(&dest_nested);
             nested_dest.push((dest_nested, #modified_fields_hash));
           )*
           let strct = #new_name {
@@ -116,7 +108,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
           result
         }
 
-        fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn(u64) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
+        fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn(ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
           let (new_struct, bytes_consumed): (#new_name, _) =
             //TODO: Check that the type ID matches
             match bincode::serde::decode_from_slice(&data[1..], BINCODE_CONFIG) {
@@ -129,7 +121,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
           #(
             let nested_data = match lookup_id(new_struct.#modified_fields) {
               None => {
-                eprintln!("Failed to look up ID {} for field {} of struct {}", new_struct.#modified_fields, stringify!(#modified_fields), stringify!(#name));
+                eprintln!("Failed to look up ID {:?} for field {} of struct {}", new_struct.#modified_fields, stringify!(#modified_fields), stringify!(#name));
                 return None
               },
               Some(data) => data,

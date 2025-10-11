@@ -1,7 +1,6 @@
 use type_vault_trait::*;
 use type_vault_trait_derive::VaultType;
 
-use std::hash::{DefaultHasher, Hash, Hasher};
 use std::collections::HashMap;
 use std::any::TypeId;
 
@@ -38,13 +37,13 @@ fn test_db_storage() {
     // The first byte 0u8 is the type id for TestStruct, the second byte 42u8 is the value of the `field` field.
     let mut visited = 0;
     db.debug_scan_primitive(vec![0u8, 42u8]).for_each(|(value, id) | {
-        println!("Scanned Value with ID {}: {:?}", id, value);
+        println!("Scanned Value with ID {:?}: {:?}", id, value);
         visited += 1;
     });
     assert_eq!(visited, 2); // At least struct1 and struct2 should match
 
     // Roundtripping
-    let serialized: Vec<(Vec<u8>, u64)> = serialize_type(& struct1, &db.type_ids);
+    let serialized: Vec<(Vec<u8>, ValueId)> = serialize_type(& struct1, &db.type_ids);
     let lookup_id = |id| {
         for (vec, hash) in serialized.iter() {
             if *hash == id {

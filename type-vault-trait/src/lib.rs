@@ -1,7 +1,13 @@
 use bincode;
 use std::{any::TypeId, collections::HashMap, hash::*};
 
-pub type ValueId = u64;
+pub type ValueId = [u8; 8];
+
+pub fn value_id_of(data: impl Hash) -> ValueId {
+    let mut s = std::collections::hash_map::DefaultHasher::new();
+    data.hash(&mut s);
+    s.finish().to_be_bytes()
+}
 
 pub trait VaultType {
     type InnerVaultType;
@@ -10,12 +16,12 @@ pub trait VaultType {
     // come first and the toplevel structs comes last.
     fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<TypeId,u8>);
     fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &HashMap<TypeId,u8>) -> Vec<u8>;
-    fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (u64) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized;
+    fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized;
 }
 
 // This function is needed because the syntax T::deserialize_value::<T>(...) is not allowed for
 // some types of T, such as Box<T>. This function provides a workaround.
-pub fn deserialize_type<T: VaultType>(data: &[u8], lookup_id: &dyn Fn (u64) -> Option<Vec<u8>>) -> Option<T> {
+pub fn deserialize_type<T: VaultType>(data: &[u8], lookup_id: &dyn Fn (ValueId) -> Option<Vec<u8>>) -> Option<T> {
     T::deserialize_value(&data, lookup_id).map(|(_serialized, val)| val)
 }
 
@@ -23,12 +29,8 @@ pub fn serialize_type<T: VaultType>(value: &T, type_map: &HashMap<TypeId,u8>) ->
     let mut nested_dest = vec![];
     let mut dest = vec![];
     value.serialize_into(&mut nested_dest, &mut dest, &type_map);
-    let hash = {
-        let mut s = std::collections::hash_map::DefaultHasher::new();
-        dest.hash(&mut s);
-        s.finish()
-    };
-    nested_dest.push((dest, hash));
+    let id = value_id_of(&dest);
+    nested_dest.push((dest, id));
     nested_dest
 }
 
@@ -44,7 +46,7 @@ impl<T: VaultType> VaultType for Box<T> {
     fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &HashMap<TypeId,u8>) -> Vec<u8> {
         (**self).serialize_prefix(fields_in_prefix, type_map)
     }
-    fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (u64) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
+    fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
         T::deserialize_value(data, lookup_id).map(|(serialized, val)| (serialized, Box::new(val)))
     }
 }
@@ -61,7 +63,7 @@ impl<T: VaultType, U: VaultType> VaultType for (T,U) {
         panic!("Prefix serialization not supported for tuples");
     }
 
-    fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (u64) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
+    fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
         let (more_data, first) =
             match T::deserialize_value(data, &lookup_id) {
                 None => {
@@ -101,7 +103,7 @@ impl<T: VaultType> VaultType for Option<T> {
         }
     }
 
-    fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (u64) -> Option<Vec<u8>>) -> Option<(&'a [u8], Self)> where Self: Sized {
+    fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8], Self)> where Self: Sized {
         if data.is_empty() {
             eprintln!("Data is empty when trying to deserialize Option");
             return None;
