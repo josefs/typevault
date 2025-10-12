@@ -9,7 +9,7 @@ proc-macro = true
 [dependencies]
 proc-macro2 = "1.0"  # Provides a stable interface for writing proc-macros
 quote = "1.0"        # Helps generate Rust code
-syn = "2.0"          # Parses Rust syntax into an AST (Abstract Syntax Tree)
+syn = { version = "2.0", features = ["full"] } # Parses Rust syntax into an AST (Abstract Syntax Tree)
 type-vault-trait = { path = "../type-vault-trait" }
 serde = { version = "1.0", features = ["derive"] }  # Includes derive macros
 serde_derive = "1.0"                               # Explicitly for Serialize/Deserialize

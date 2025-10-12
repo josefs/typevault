@@ -16,6 +16,8 @@ struct TestStruct {
     i32_field: i32,
     f64_field: f64,
     bool_field: bool,
+    unit_field: (),
+    tuple_field: (i32, f64, bool, ()),
     base_field: BaseStruct,
 }
 
@@ -26,6 +28,8 @@ fn test_derive() {
             i32_field: 42,
             f64_field: 0.1,
             bool_field: true,
+            unit_field: (),
+            tuple_field: (1, 0.2, false, ()),
             base_field: BaseStruct { foo: 10 }
         };
     let id_map = HashMap::from([
@@ -37,8 +41,8 @@ fn test_derive() {
     assert_eq!(serialized.len(), 2); // One for the struct itself, one for the base struct
 
     // Test prefix serialization
-    assert_eq!(test_struct.serialize_prefix(4, &id_map), serialize_type(&test_struct, &id_map).pop().unwrap().0);
-    println!("Prefix with all fields: {:?}", test_struct.serialize_prefix(4, &id_map));
+    assert_eq!(test_struct.serialize_prefix(6, &id_map), serialize_type(&test_struct, &id_map).pop().unwrap().0);
+    println!("Prefix with all fields: {:?}", test_struct.serialize_prefix(6, &id_map));
 
     // Deserialization test
     let base_serialized: &(Vec<u8>, ValueId) = &serialized[0];

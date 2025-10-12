@@ -140,8 +140,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
 }
 
 fn is_primitive_type(ty: &Type) -> bool {
-  matches!(
-    ty,
+  match ty {
     Type::Path(ref type_path)
       if type_path.path.is_ident("u8")
       || type_path.path.is_ident("u16")
@@ -155,6 +154,16 @@ fn is_primitive_type(ty: &Type) -> bool {
       || type_path.path.is_ident("i128")
       || type_path.path.is_ident("f32")
       || type_path.path.is_ident("f64")
-      || type_path.path.is_ident("bool")
-  )
+      || type_path.path.is_ident("bool") => return true,
+    Type::Array(el_ty) => return is_primitive_type(&el_ty.elem),
+    Type::Tuple(tuple) => {
+      for elem in &tuple.elems {
+        if !is_primitive_type(elem) {
+          return false;
+        }
+      }
+      return true;
+    },
+    _ => return false,
+  }
 }
