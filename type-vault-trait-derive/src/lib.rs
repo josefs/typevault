@@ -1,6 +1,8 @@
+use std::convert;
+
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields, Type};
+use syn::{parse_macro_input, DeriveInput, Data, Field, Fields, Type};
 
 
 #[proc_macro_derive(VaultType)]
@@ -12,32 +14,14 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
   match input.data {
     Data::Enum(_) | Data::Union(_) => panic!("ReplaceWithValueId can only be used with structs"),
     Data::Struct(data_struct) => {
-      let mut types = Vec::new();
-      let mut unmodified_fields = Vec::new();
-      let mut modified_fields = Vec::new();
-      let mut modified_field_types = Vec::new();
-      let mut is_modified_field: Vec<bool> = Vec::new();
-      let fields: Vec<_> = match data_struct.fields {
-        Fields::Named(fields_named) => fields_named.named.into_iter().map(|mut field| {
-          let ty : Type = field.ty.clone();
-          if !is_primitive_type(&ty) {
-            types.push(ty.clone());
-            modified_fields.push(field.ident.as_ref().unwrap().clone());
-            modified_field_types.push(ty.clone());
-            field.ty = syn::parse_quote!(ValueId);
-            is_modified_field.push(true);
-          } else {
-            unmodified_fields.push(field.ident.as_ref().unwrap().clone());
-            is_modified_field.push(false);
-          }
-          field
-        }).collect(),
-        _ => panic!("Only named fields are supported"),
-      };
-
-      let field_names =
-            fields.iter().map(|field|
-              field.ident.as_ref().unwrap()).collect::<Vec<_>>();
+      let NewNamedFieldsInfo {
+        field_names,
+        field_types,
+        is_modified_field,
+        modified_fields,
+        modified_field_types,
+        unmodified_fields,
+      } = convert_fields(&data_struct.fields);
 
       let modified_fields_hash = modified_fields.iter().map(|field| {
         let field_str = field.to_string();
@@ -63,11 +47,11 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
       TokenStream::from(quote! {
         #[derive(Serialize, Deserialize)]
         pub struct #new_name {
-          #(#fields),*
+          #(#field_names : #field_types),*
         }
 
         impl VaultType for #name {
-          type InnerVaultType = (#new_name #(,#types)*);
+          type InnerVaultType = (#new_name #(,#modified_field_types)*);
 
 
           fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<std::any::TypeId,u8>) {
@@ -123,7 +107,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
                 },
                 Some(data) => data,
               };
-              let #modified_fields : #types = deserialize_type::<#types>(&nested_data, lookup_id)?;
+              let #modified_fields : #modified_field_types = deserialize_type::<#modified_field_types>(&nested_data, lookup_id)?;
             )*
             Some((
               &data[bytes_consumed..],
@@ -168,3 +152,49 @@ fn is_primitive_type(ty: &Type) -> bool {
   }
 }
 
+struct NewNamedFieldsInfo {
+  field_names: Vec<syn::Ident>,
+  field_types: Vec<Type>,
+  is_modified_field: Vec<bool>,
+  modified_fields: Vec<syn::Ident>,
+  modified_field_types: Vec<Type>,
+  unmodified_fields: Vec<syn::Ident>,
+}
+
+fn convert_fields(fields: &Fields) -> NewNamedFieldsInfo {
+  let mut field_names = Vec::new();
+  let mut field_types = Vec::new();
+  let mut is_modified_field = Vec::new();
+  let mut modified_fields = Vec::new();
+  let mut modified_field_types = Vec::new();
+  let mut unmodified_fields = Vec::new();
+
+  match fields {
+    Fields::Named(fields_named) => {
+      for field in &fields_named.named {
+        let ty: &Type = &field.ty;
+        field_names.push(field.ident.as_ref().unwrap().clone());
+        if is_primitive_type(ty) {
+          field_types.push(ty.clone());
+          is_modified_field.push(false);
+          unmodified_fields.push(field.ident.as_ref().unwrap().clone());
+        } else {
+          field_types.push(syn::parse_quote!(ValueId));
+          is_modified_field.push(true);
+          modified_fields.push(field.ident.as_ref().unwrap().clone());
+          modified_field_types.push(ty.clone());
+        }
+      }
+    },
+    _ => panic!("Only named fields are supported"),
+  }
+
+  NewNamedFieldsInfo {
+    field_names,
+    field_types,
+    is_modified_field,
+    modified_fields,
+    modified_field_types,
+    unmodified_fields,
+  }
+}
