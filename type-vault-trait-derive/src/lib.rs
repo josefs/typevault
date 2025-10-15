@@ -65,15 +65,13 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
               quote! {
                 let mut dest = vec![];
                 // Ignore the nested fields. We only care about the hash.
-//                self.#field_index.serialize_into(&mut vec![], &mut dest, type_map);
-                self.0.serialize_into(&mut vec![], &mut dest, type_map);
+                self.#field_index.serialize_into(&mut vec![], &mut dest, type_map);
                 let #field_var = value_id_of(&dest);
                 result.extend(bincode::serde::encode_to_vec(#field_var, BINCODE_CONFIG).unwrap());
               }
             } else {
               quote! {
-//                let #field_var = self.#field_index;
-                let #field_var = self.0;
+                let #field_var = self.#field_index;
                 result.extend(bincode::serde::encode_to_vec(#field_var, BINCODE_CONFIG).unwrap());
               }
             }
