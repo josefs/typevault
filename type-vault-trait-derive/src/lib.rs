@@ -35,7 +35,7 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
 
         Fields::Unnamed(unnamed_fields) => {
           let NewUnnamedFieldsInfo {
-            field_indices,
+            field_members,
             field_types,
             field_vars,
             is_modified_field,
@@ -45,65 +45,16 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
             build_struct,
           } = convert_unnamed_fields(&new_name, &unnamed_fields);
 
-          let serialize_into_fields = zip(&field_indices, zip(&is_modified_field, &field_vars)).map(|(field_index,(is_modified, field_var))| {
-            if *is_modified {
-              quote! {
-                let mut dest_nested = vec![];
-                self.#field_index.serialize_into(nested_dest, &mut dest_nested, type_map);
-                let #field_var = value_id_of(&dest_nested);
-                nested_dest.push((dest_nested, #field_var));
-              }
-            } else {
-              quote! {
-                let #field_var = self.#field_index;
-              }
-            }
-          });
-
-          let serialize_fields = zip(&field_indices, zip(&is_modified_field, &field_vars)).map(|(field_index,(is_modified, field_var))| {
-            if *is_modified {
-              quote! {
-                let mut dest = vec![];
-                // Ignore the nested fields. We only care about the hash.
-                self.#field_index.serialize_into(&mut vec![], &mut dest, type_map);
-                let #field_var = value_id_of(&dest);
-                result.extend(bincode::serde::encode_to_vec(#field_var, BINCODE_CONFIG).unwrap());
-              }
-            } else {
-              quote! {
-                let #field_var = self.#field_index;
-                result.extend(bincode::serde::encode_to_vec(#field_var, BINCODE_CONFIG).unwrap());
-              }
-            }
-          });
-
-          let deserialize_fields = zip(&is_modified_field, zip(&field_vars, zip(&field_types, &field_indices))).map(|(is_modified, (field_var, (field_type, field_index)))| {
-            if *is_modified {
-            quote! {
-              let nested_data = match lookup_id(new_struct.#field_index) {
-                None => {
-                  eprintln!("Failed to look up ID {:?} for field {} of struct {}", new_struct.#field_index, stringify!(#field_index), stringify!(#name));
-                  return None
-                },
-                Some(data) => data,
-              };
-              let #field_var : #field_type = deserialize_type::<#field_type>(&nested_data, lookup_id)?;
-            }
-          } else {
-            quote! {
-              let #field_var = new_struct.#field_index;
-            }
-          }});
-
-          create_vault_type_instance_for_struct(&name,new_name, make_struct,
-            modified_field_types, serialize_into_fields, assign_new_struct,
-            serialize_fields, deserialize_fields, build_struct)
+          create_vault_type_instance_for_struct(&name,new_name, make_struct, &field_vars, field_types, &field_members,
+            &is_modified_field,
+            modified_field_types, assign_new_struct,
+            build_struct)
 
         },
 
         Fields::Named(named_fields) => {
           let NewNamedFieldsInfo {
-            field_names,
+            field_members,
             field_types,
             field_vars,
             is_modified_field,
@@ -113,58 +64,10 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
             build_struct,
           } = convert_named_fields(&new_name, &named_fields);
 
-          let serialize_into_fields = field_names.iter().zip(is_modified_field.iter()).zip(field_vars.iter()).map(|((field_name, is_modified), field_var)| {
-            if *is_modified {
-              quote! {
-                let mut dest_nested = vec![];
-                self.#field_name.serialize_into(nested_dest, &mut dest_nested, type_map);
-                let #field_var = value_id_of(&dest_nested);
-                nested_dest.push((dest_nested, #field_var));
-              }
-            } else {
-              quote! {
-                let #field_var = self.#field_name;
-              }
-            }
-          });
-
-          let serialize_fields = field_names.iter().zip(is_modified_field.iter()).map(|(field_name, is_modified)| {
-            if *is_modified {
-              quote! {
-                let mut dest = vec![];
-                // Ignore the nested fields. We only care about the hash.
-                self.#field_name.serialize_into(&mut vec![], &mut dest, type_map);
-                let #field_name = value_id_of(&dest);
-                result.extend(bincode::serde::encode_to_vec(#field_name, BINCODE_CONFIG).unwrap());
-              }
-            } else {
-              quote! {
-                result.extend(bincode::serde::encode_to_vec(self.#field_name, BINCODE_CONFIG).unwrap());
-              }
-            }
-          });
-
-          let deserialize_fields = zip(&is_modified_field, zip(&field_vars, zip(&field_types, &field_names))).map(|(is_modified, (field_var, (field_type, field_name)))| {
-            if *is_modified {
-            quote! {
-              let nested_data = match lookup_id(new_struct.#field_name) {
-                None => {
-                  eprintln!("Failed to look up ID {:?} for field {} of struct {}", new_struct.#field_name, stringify!(#field_name), stringify!(#name));
-                  return None
-                },
-                Some(data) => data,
-              };
-              let #field_var : #field_type = deserialize_type::<#field_type>(&nested_data, lookup_id)?;
-            }
-          } else {
-            quote! {
-              let #field_var = new_struct.#field_name;
-            }
-          }});
-
-          create_vault_type_instance_for_struct(&name,new_name, make_struct,
-            modified_field_types, serialize_into_fields, assign_new_struct,
-            serialize_fields, deserialize_fields, build_struct)
+          create_vault_type_instance_for_struct(&name,new_name, make_struct, &field_vars, field_types, &field_members,
+            &is_modified_field,
+            modified_field_types, assign_new_struct,
+            build_struct)
         }
       }
     }
@@ -204,14 +107,66 @@ fn create_vault_type_instance_for_struct(
     name: &Ident,
     new_name: Ident,
     make_struct: TokenStream,
+    field_vars: &Vec<Ident>,
+    field_types: Vec<Type>,
+    field_members: &Vec<Member>,
+    is_modified_field: &Vec<bool>,
     modified_field_types: Vec<Type>,
-    serialize_into_fields: impl Iterator<Item = TokenStream>,
     assign_new_struct: TokenStream,
-    serialize_fields: impl Iterator<Item = TokenStream>,
-    deserialize_fields: impl Iterator<Item = TokenStream>,
     build_struct: TokenStream
   )
     -> proc_macro::TokenStream {
+
+  let serialize_into_fields = zip(field_members, zip(is_modified_field, field_vars)).map(|(field_member, (is_modified, field_var))| {
+    if *is_modified {
+      quote! {
+        let mut dest_nested = vec![];
+        self.#field_member.serialize_into(nested_dest, &mut dest_nested, type_map);
+        let #field_var = value_id_of(&dest_nested);
+        nested_dest.push((dest_nested, #field_var));
+      }
+    } else {
+      quote! {
+        let #field_var = self.#field_member;
+      }
+    }
+  });
+
+
+  let serialize_fields = zip(field_members, is_modified_field).map(|(field_member, is_modified)| {
+    if *is_modified {
+      quote! {
+        let mut dest = vec![];
+        // Ignore the nested fields. We only care about the hash.
+        self.#field_member.serialize_into(&mut vec![], &mut dest, type_map);
+        result.extend(bincode::serde::encode_to_vec(value_id_of(&dest), BINCODE_CONFIG).unwrap());
+      }
+    } else {
+      quote! {
+        result.extend(bincode::serde::encode_to_vec(self.#field_member, BINCODE_CONFIG).unwrap());
+      }
+    }
+  });
+
+
+  let deserialize_fields = zip(is_modified_field, zip(field_vars, zip(&field_types, field_members))).map(|(is_modified, (field_var, (field_type, field_member)))| {
+    if *is_modified {
+    quote! {
+      let nested_data = match lookup_id(new_struct.#field_member) {
+        None => {
+          eprintln!("Failed to look up ID {:?} for field {} of struct {}", new_struct.#field_member, stringify!(#field_member), stringify!(#name));
+          return None
+        },
+        Some(data) => data,
+      };
+      let #field_var : #field_type = deserialize_type::<#field_type>(&nested_data, lookup_id)?;
+    }
+  } else {
+    quote! {
+      let #field_var = new_struct.#field_member;
+    }
+  }});
+
   proc_macro::TokenStream::from(quote! {
     #make_struct
 
@@ -276,7 +231,7 @@ enum FieldsInfo {
   Unit,
 }
 struct NewNamedFieldsInfo {
-  field_names: Vec<Ident>,
+  field_members: Vec<Member>,
   field_types: Vec<Type>,
   field_vars: Vec<Ident>,
   is_modified_field: Vec<bool>,
@@ -287,7 +242,7 @@ struct NewNamedFieldsInfo {
 }
 
 struct NewUnnamedFieldsInfo {
-  field_indices: Vec<Member>,
+  field_members: Vec<Member>,
   field_types: Vec<Type>,
   field_vars: Vec<Ident>,
   is_modified_field: Vec<bool>,
@@ -298,7 +253,7 @@ struct NewUnnamedFieldsInfo {
 }
 
 fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewNamedFieldsInfo {
-  let mut field_names = Vec::new();
+  let mut field_members = Vec::new();
   let mut field_types = Vec::new();
   let mut field_vars = Vec::new();
   let mut is_modified_field = Vec::new();
@@ -310,7 +265,8 @@ fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewName
 
   for field in &named_fields.named {
     let ty: &Type = &field.ty;
-    field_names.push(field.ident.as_ref().unwrap().clone());
+    let field_member = Member::Named(field.ident.as_ref().unwrap().clone());
+    field_members.push(field_member);
     field_types.push(ty.clone());
     field_vars.push(syn::Ident::new(&format!("var_{}", field.ident.as_ref().unwrap()), field.ident.as_ref().unwrap().span()));
     if is_primitive_type(ty) {
@@ -327,21 +283,21 @@ fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewName
   let make_struct: TokenStream = quote!{
       #[derive(Serialize, Deserialize)]
       pub struct #new_name {
-        #(#field_names : #new_field_types),*
+        #(#field_members : #new_field_types),*
       }
   };
   let assign_new_struct: TokenStream = quote!{
     #new_name {
-      #(#field_names : #field_vars),*
+      #(#field_members : #field_vars),*
     }
   };
   let build_struct = quote!{
     Self {
-      #(#field_names : #field_vars),*
+      #(#field_members : #field_vars),*
     }
   };
   NewNamedFieldsInfo {
-    field_names,
+    field_members,
     field_types,
     field_vars,
     is_modified_field,
@@ -353,7 +309,7 @@ fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewName
 }
 
 fn convert_unnamed_fields(new_name: &Ident, unnamed_fields: &FieldsUnnamed) -> NewUnnamedFieldsInfo {
-  let mut field_indices = Vec::new();
+  let mut field_members = Vec::new();
   let mut field_types = Vec::new();
   let mut field_vars = Vec::new();
   let mut is_modified_field = Vec::new();
@@ -368,7 +324,7 @@ fn convert_unnamed_fields(new_name: &Ident, unnamed_fields: &FieldsUnnamed) -> N
     // Don't know if the span here is correct. But I don't think it matters much.
     let index = Member::Unnamed(Index{index: i as u32,
       span: proc_macro2::Span::call_site()});
-    field_indices.push(index.clone());
+    field_members.push(index.clone());
     field_types.push(ty.clone());
     field_vars.push(syn::Ident::new(&format!("field_{}", i), proc_macro2::Span::call_site()));
     if is_primitive_type(ty) {
@@ -399,7 +355,7 @@ fn convert_unnamed_fields(new_name: &Ident, unnamed_fields: &FieldsUnnamed) -> N
     )
   };
   NewUnnamedFieldsInfo {
-    field_indices,
+    field_members,
     field_types,
     field_vars,
     is_modified_field,
