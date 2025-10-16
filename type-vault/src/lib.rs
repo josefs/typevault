@@ -6,7 +6,7 @@ pub struct TypeVault {
   base_db: sled::Db,
   id_to_value_map: sled::Tree,
   value_to_id_map: sled::Tree,
-  pub type_ids: HashMap<TypeId,u8>,
+  pub type_ids: TypeMap,
 }
 
 #[macro_export]

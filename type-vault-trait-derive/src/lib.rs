@@ -20,11 +20,11 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
               type InnerVaultType = (#name);
 
               fn serialize_into(&self, _nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
-                dest.append(&mut vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()]);
+                dest.append(&mut lookup_type_id(type_map, &TypeId::of::<Self>()).expect("Type not registered in type map").to_owned());
               }
 
               fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
-                return vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()];
+                return lookup_type_id(type_map, &TypeId::of::<Self>()).expect("Type not registered in type map").to_owned();
               }
 
               fn deserialize_value<'a>(data: &'a [u8], _lookup_id: &dyn Fn(ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
@@ -115,13 +115,13 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
                   Ok(vec) => vec,
                   Err(err) => panic!("bincode failed with: {:?}", err),
                 };
-                dest.append(&mut vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()]);
+                dest.append(&mut lookup_type_id(type_map, &TypeId::of::<Self>()).expect("Type not registered in type map").to_owned());
                 dest.append(&mut serialized);
 
               }
 
               fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
-                let mut result = vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()];
+                let mut result = lookup_type_id(type_map, &TypeId::of::<Self>()).expect("Type not registered in type map").to_owned();
                 let mut remaining_fields = fields_in_prefix;
 
                 #(
@@ -218,12 +218,12 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
                   Ok(vec) => vec,
                   Err(err) => panic!("bincode failed with: {:?}", err),
                 };
-                dest.append(&mut vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()]);
+                dest.append(&mut lookup_type_id(type_map, &TypeId::of::<Self>()).expect("Type not registered in type map").to_owned());
                 dest.append(&mut serialized);
               }
 
               fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
-                let mut result = vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()];
+                let mut result = lookup_type_id(type_map, &TypeId::of::<Self>()).expect("Type not registered in type map").to_owned();
                 let mut remaining_fields = fields_in_prefix;
 
                 #(

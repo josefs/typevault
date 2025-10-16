@@ -11,6 +11,11 @@ pub fn value_id_of(data: impl Hash) -> ValueId {
     s.finish().to_be_bytes()
 }
 
+pub fn lookup_type_id(type_map: &TypeMap, type_id: &TypeId) -> Option<Vec<u8>> {
+    type_map.get(type_id).copied().
+    map(|u| bincode::serde::encode_to_vec(u, BINCODE_CONFIG).ok())?
+}
+
 pub trait VaultType {
     type InnerVaultType;
     // The reason for multiple Vec<u8> here is to allow for nested structs.
