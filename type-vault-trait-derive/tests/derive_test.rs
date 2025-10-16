@@ -42,12 +42,11 @@ fn test_derive() {
             unit_struct_field: UnitStruct,
             unnamed_struct_field: UnnamedStruct(7),
         };
-    let id_map = HashMap::from([
-        (std::any::TypeId::of::<TestStruct>(), 1),
-        (std::any::TypeId::of::<BaseStruct>(), 2),
-        (std::any::TypeId::of::<UnitStruct>(), 3),
-        (std::any::TypeId::of::<UnnamedStruct>(), 4),
-    ]);
+    let id_map = TypeMap::new(vec![
+        TypeId::of::<TestStruct>(),
+        TypeId::of::<BaseStruct>(),
+        TypeId::of::<UnitStruct>(),
+        TypeId::of::<UnnamedStruct>()]);
     let serialized: Vec<(Vec<u8>, ValueId)> = serialize_type(&test_struct, &id_map);
     println!("Serialized: {:?}", serialized);
     assert_eq!(serialized.len(), 4); // One for the struct itself, one for each of the nested structs

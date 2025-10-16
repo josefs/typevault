@@ -3,17 +3,27 @@ use std::{any::TypeId, collections::HashMap, hash::*};
 
 pub type ValueId = [u8; 8];
 
-pub type TypeMap = HashMap<TypeId,usize>;
-
 pub fn value_id_of(data: impl Hash) -> ValueId {
     let mut s = std::collections::hash_map::DefaultHasher::new();
     data.hash(&mut s);
     s.finish().to_be_bytes()
 }
 
-pub fn lookup_type_id(type_map: &TypeMap, type_id: &TypeId) -> Option<Vec<u8>> {
-    type_map.get(type_id).copied().
-    map(|u| bincode::serde::encode_to_vec(u, BINCODE_CONFIG).ok())?
+pub struct TypeMap (HashMap<TypeId,usize>);
+
+impl TypeMap {
+    pub fn new(type_ids: Vec<TypeId>) -> Self {
+        let mut map = HashMap::new();
+        for (i, type_id) in type_ids.into_iter().enumerate() {
+            map.insert(type_id, i);
+        }
+        TypeMap(map)
+    }
+
+    pub fn get(&self, type_id: &TypeId) -> Option<Vec<u8>> {
+        self.0.get(type_id).copied()
+        .map(|u| bincode::serde::encode_to_vec(u, BINCODE_CONFIG).ok())?
+    }
 }
 
 pub trait VaultType {

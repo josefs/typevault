@@ -42,7 +42,7 @@ fn test_db_storage() {
     assert_eq!(visited, 2); // At least struct1 and struct2 should match
 
     // Roundtripping
-    let serialized: Vec<(Vec<u8>, ValueId)> = serialize_type(& struct1, &db.type_ids);
+    let serialized: Vec<(Vec<u8>, ValueId)> = serialize_type(& struct1, &db.type_map);
     let lookup_id = |id| {
         for (vec, hash) in serialized.iter() {
             if *hash == id {

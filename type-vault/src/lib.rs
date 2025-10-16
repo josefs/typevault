@@ -6,7 +6,7 @@ pub struct TypeVault {
   base_db: sled::Db,
   id_to_value_map: sled::Tree,
   value_to_id_map: sled::Tree,
-  pub type_ids: TypeMap,
+  pub type_map: TypeMap,
 }
 
 #[macro_export]
@@ -21,13 +21,10 @@ impl TypeVault {
         let db: sled::Db = sled::open(path).expect("Failed to open database");
         let id_to_value_map = db.open_tree("id_to_value").expect("Failed to open id_to_value tree");
         let value_to_id_map = db.open_tree("value_to_id").expect("Failed to open value_to_id tree");
-        let mut type_id_map = HashMap::new();
-        for (i, type_id) in type_ids.into_iter().enumerate() {
-            type_id_map.insert(type_id, i);
-        }
+        let mut type_map = TypeMap::new(type_ids);
         TypeVault { base_db: db
             , id_to_value_map, value_to_id_map
-            , type_ids: type_id_map
+            , type_map
         }
     }
 
@@ -38,7 +35,7 @@ impl TypeVault {
     }
 
     pub fn put<T:VaultType>(&self, value: &T) -> Result<(), sled::Error> {
-        let data = serialize_type(value, &self.type_ids);
+        let data = serialize_type(value, &self.type_map);
         for (val, id) in data {
             self.value_to_id_map.insert(&val, &id)?;
             self.id_to_value_map.insert(id, val)?;
@@ -47,7 +44,7 @@ impl TypeVault {
     }
 
     pub fn scan<'a, T: VaultType>(&'a self, value: T, fields_in_prefix: u64) -> impl Iterator<Item = (Box<T>, ValueId)> + 'a {
-        let prefix = value.serialize_prefix(fields_in_prefix, &self.type_ids);
+        let prefix = value.serialize_prefix(fields_in_prefix, &self.type_map);
         self.debug_scan(prefix)
     }
 
