@@ -3,7 +3,7 @@ use std::{any::TypeId, collections::HashMap, hash::*};
 
 pub type ValueId = [u8; 8];
 
-pub type TypeMap = HashMap<TypeId,u8>;
+pub type TypeMap = HashMap<TypeId,usize>;
 
 pub fn value_id_of(data: impl Hash) -> ValueId {
     let mut s = std::collections::hash_map::DefaultHasher::new();

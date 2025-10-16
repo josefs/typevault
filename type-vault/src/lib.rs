@@ -23,7 +23,7 @@ impl TypeVault {
         let value_to_id_map = db.open_tree("value_to_id").expect("Failed to open value_to_id tree");
         let mut type_id_map = HashMap::new();
         for (i, type_id) in type_ids.into_iter().enumerate() {
-            type_id_map.insert(type_id, i as u8);
+            type_id_map.insert(type_id, i);
         }
         TypeVault { base_db: db
             , id_to_value_map, value_to_id_map

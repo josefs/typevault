@@ -43,10 +43,10 @@ fn test_derive() {
             unnamed_struct_field: UnnamedStruct(7),
         };
     let id_map = HashMap::from([
-        (std::any::TypeId::of::<TestStruct>(), 1u8),
-        (std::any::TypeId::of::<BaseStruct>(), 2u8),
-        (std::any::TypeId::of::<UnitStruct>(), 3u8),
-        (std::any::TypeId::of::<UnnamedStruct>(), 4u8),
+        (std::any::TypeId::of::<TestStruct>(), 1),
+        (std::any::TypeId::of::<BaseStruct>(), 2),
+        (std::any::TypeId::of::<UnitStruct>(), 3),
+        (std::any::TypeId::of::<UnnamedStruct>(), 4),
     ]);
     let serialized: Vec<(Vec<u8>, ValueId)> = serialize_type(&test_struct, &id_map);
     println!("Serialized: {:?}", serialized);
