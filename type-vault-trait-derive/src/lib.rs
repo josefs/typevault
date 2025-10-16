@@ -95,62 +95,10 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
             }
           }});
 
-          proc_macro::TokenStream::from(quote!{
-            #make_struct
+          create_vault_type_instance_for_struct(&name,new_name, make_struct,
+            modified_field_types, serialize_into_fields, assign_new_struct,
+            serialize_fields, deserialize_fields, build_struct)
 
-            impl VaultType for #name {
-              type InnerVaultType = (#new_name #(,#modified_field_types)*);
-
-              fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
-                #(
-                  #serialize_into_fields
-                )*
-                let strct = #assign_new_struct;
-                let mut serialized = match bincode::serde::encode_to_vec(&strct, BINCODE_CONFIG) {
-                  Ok(vec) => vec,
-                  Err(err) => panic!("bincode failed with: {:?}", err),
-                };
-                dest.append(&mut type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned());
-                dest.append(&mut serialized);
-              }
-
-              fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
-                let mut result = type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned();
-                let mut remaining_fields = fields_in_prefix;
-
-                #(
-                  if remaining_fields > 0 {
-                    #serialize_fields
-                  } else {
-                    return result;
-                  }
-                  remaining_fields -= 1;
-                )*
-
-                result
-              }
-
-              fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn(ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
-                let (new_struct, bytes_consumed): (#new_name, _) =
-                  //TODO: Check that the type ID matches
-                  match bincode::serde::decode_from_slice(&data[1..], BINCODE_CONFIG) {
-                    Err(_) => {
-                      eprintln!("Failed to decode struct of type {}, data: {:?}", stringify!(#new_name), &data);
-                      return None
-                    },
-                    Ok((strct, bytes_consumed)) => (strct, bytes_consumed),
-                };
-                #(
-                  #deserialize_fields
-                )*
-                Some((
-                  &data[bytes_consumed..],
-                  #build_struct
-                ))
-              }
-            }
-            }
-          )
         },
 
         Fields::Named(named_fields) => {
@@ -214,63 +162,9 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
             }
           }});
 
-
-          proc_macro::TokenStream::from(quote! {
-            #make_struct
-
-            impl VaultType for #name {
-              type InnerVaultType = (#new_name #(,#modified_field_types)*);
-
-              fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
-                #(
-                  #serialize_into_fields
-                )*
-                let strct = #assign_new_struct;
-                let mut serialized = match bincode::serde::encode_to_vec(&strct, BINCODE_CONFIG) {
-                  Ok(vec) => vec,
-                  Err(err) => panic!("bincode failed with: {:?}", err),
-                };
-                dest.append(&mut type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned());
-                dest.append(&mut serialized);
-              }
-
-              fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
-                let mut result = type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned();
-                let mut remaining_fields = fields_in_prefix;
-
-                #(
-                  if remaining_fields > 0 {
-                    #serialize_fields
-                  } else {
-                    return result;
-                  }
-                  remaining_fields -= 1;
-                )*
-
-                result
-              }
-
-              fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn(ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
-                let (new_struct, bytes_consumed): (#new_name, _) =
-                  //TODO: Check that the type ID matches
-                  match bincode::serde::decode_from_slice(&data[1..], BINCODE_CONFIG) {
-                    Err(_) => {
-                      eprintln!("Failed to decode struct of type {}, data: {:?}", stringify!(#new_name), &data);
-                      return None
-                    },
-                    Ok((strct, bytes_consumed)) => (strct, bytes_consumed),
-                };
-                #(
-                  #deserialize_fields
-                )*
-                Some((
-                  &data[bytes_consumed..],
-                  #build_struct
-                ))
-              }
-            }
-          }
-          )
+          create_vault_type_instance_for_struct(&name,new_name, make_struct,
+            modified_field_types, serialize_into_fields, assign_new_struct,
+            serialize_fields, deserialize_fields, build_struct)
         }
       }
     }
@@ -304,6 +198,76 @@ fn is_primitive_type(ty: &Type) -> bool {
     },
     _ => return false,
   }
+}
+
+fn create_vault_type_instance_for_struct(
+    name: &Ident,
+    new_name: Ident,
+    make_struct: TokenStream,
+    modified_field_types: Vec<Type>,
+    serialize_into_fields: impl Iterator<Item = TokenStream>,
+    assign_new_struct: TokenStream,
+    serialize_fields: impl Iterator<Item = TokenStream>,
+    deserialize_fields: impl Iterator<Item = TokenStream>,
+    build_struct: TokenStream
+  )
+    -> proc_macro::TokenStream {
+  proc_macro::TokenStream::from(quote! {
+    #make_struct
+
+    impl VaultType for #name {
+      type InnerVaultType = (#new_name #(,#modified_field_types)*);
+
+      fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
+        #(
+          #serialize_into_fields
+        )*
+        let strct = #assign_new_struct;
+        let mut serialized = match bincode::serde::encode_to_vec(&strct, BINCODE_CONFIG) {
+          Ok(vec) => vec,
+          Err(err) => panic!("bincode failed with: {:?}", err),
+        };
+        dest.append(&mut type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned());
+        dest.append(&mut serialized);
+      }
+
+      fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
+        let mut result = type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned();
+        let mut remaining_fields = fields_in_prefix;
+
+        #(
+          if remaining_fields > 0 {
+            #serialize_fields
+          } else {
+            return result;
+          }
+          remaining_fields -= 1;
+        )*
+
+        result
+      }
+
+      fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn(ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
+        let (new_struct, bytes_consumed): (#new_name, _) =
+          //TODO: Check that the type ID matches
+          match bincode::serde::decode_from_slice(&data[1..], BINCODE_CONFIG) {
+            Err(_) => {
+              eprintln!("Failed to decode struct of type {}, data: {:?}", stringify!(#new_name), &data);
+              return None
+            },
+            Ok((strct, bytes_consumed)) => (strct, bytes_consumed),
+        };
+        #(
+          #deserialize_fields
+        )*
+        Some((
+          &data[bytes_consumed..],
+          #build_struct
+        ))
+      }
+    }
+  }
+  )
 }
 
 enum FieldsInfo {
