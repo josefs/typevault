@@ -19,11 +19,11 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
             impl VaultType for #name {
               type InnerVaultType = (#name);
 
-              fn serialize_into(&self, _nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<std::any::TypeId,u8>) {
+              fn serialize_into(&self, _nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
                 dest.append(&mut vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()]);
               }
 
-              fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &HashMap<std::any::TypeId,u8>) -> Vec<u8> {
+              fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
                 return vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()];
               }
 
@@ -104,7 +104,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
             impl VaultType for #name {
               type InnerVaultType = (#new_name #(,#modified_field_types)*);
 
-              fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<std::any::TypeId,u8>) {
+              fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
                 #(
                   #serialize_into_fields
                 )*
@@ -120,7 +120,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
 
               }
 
-              fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &HashMap<std::any::TypeId,u8>) -> Vec<u8> {
+              fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
                 let mut result = vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()];
                 let mut remaining_fields = fields_in_prefix;
 
@@ -203,7 +203,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
             impl VaultType for #name {
               type InnerVaultType = (#new_name #(,#modified_field_types)*);
 
-              fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<std::any::TypeId,u8>) {
+              fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
                 #(
                   let mut dest_nested = vec![];
                   self.#modified_fields.serialize_into(nested_dest, &mut dest_nested, type_map);
@@ -222,7 +222,7 @@ pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
                 dest.append(&mut serialized);
               }
 
-              fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &HashMap<std::any::TypeId,u8>) -> Vec<u8> {
+              fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
                 let mut result = vec![type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned()];
                 let mut remaining_fields = fields_in_prefix;
 

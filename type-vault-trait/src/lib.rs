@@ -3,6 +3,8 @@ use std::{any::TypeId, collections::HashMap, hash::*};
 
 pub type ValueId = [u8; 8];
 
+pub type TypeMap = HashMap<TypeId,u8>;
+
 pub fn value_id_of(data: impl Hash) -> ValueId {
     let mut s = std::collections::hash_map::DefaultHasher::new();
     data.hash(&mut s);
@@ -14,8 +16,8 @@ pub trait VaultType {
     // The reason for multiple Vec<u8> here is to allow for nested structs.
     // The serialized Vec<u8> are in post order, meaning that the nested structs
     // come first and the toplevel structs comes last.
-    fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<TypeId,u8>);
-    fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &HashMap<TypeId,u8>) -> Vec<u8>;
+    fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap);
+    fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8>;
     fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized;
 }
 
@@ -25,7 +27,7 @@ pub fn deserialize_type<T: VaultType>(data: &[u8], lookup_id: &dyn Fn (ValueId) 
     T::deserialize_value(&data, lookup_id).map(|(_serialized, val)| val)
 }
 
-pub fn serialize_type<T: VaultType>(value: &T, type_map: &HashMap<TypeId,u8>) -> Vec<(Vec<u8>, ValueId)> {
+pub fn serialize_type<T: VaultType>(value: &T, type_map: &TypeMap) -> Vec<(Vec<u8>, ValueId)> {
     let mut nested_dest = vec![];
     let mut dest = vec![];
     value.serialize_into(&mut nested_dest, &mut dest, &type_map);
@@ -39,11 +41,11 @@ pub const BINCODE_CONFIG: bincode::config::Configuration<bincode::config::BigEnd
 
 impl<T: VaultType> VaultType for Box<T> {
     type InnerVaultType = T;
-    fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<TypeId,u8>) {
+    fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
         (**self).serialize_into(nested_dest, dest, type_map);
     }
 
-    fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &HashMap<TypeId,u8>) -> Vec<u8> {
+    fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
         (**self).serialize_prefix(fields_in_prefix, type_map)
     }
     fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn (ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
@@ -53,12 +55,12 @@ impl<T: VaultType> VaultType for Box<T> {
 
 impl<T: VaultType, U: VaultType> VaultType for (T,U) {
     type InnerVaultType = U;
-    fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<TypeId,u8>) {
+    fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
         self.0.serialize_into(nested_dest, dest, type_map);
         self.1.serialize_into(nested_dest, dest, type_map);
     }
 
-    fn serialize_prefix(&self, _fields_in_prefix: u64, _type_map: &HashMap<TypeId,u8>) -> Vec<u8> {
+    fn serialize_prefix(&self, _fields_in_prefix: u64, _type_map: &TypeMap) -> Vec<u8> {
         // This method is only meant for structs.
         panic!("Prefix serialization not supported for tuples");
     }
@@ -87,11 +89,11 @@ impl<T: VaultType, U: VaultType> VaultType for (T,U) {
 
 impl<T: VaultType> VaultType for Option<T> {
     type InnerVaultType = T;
-    fn serialize_prefix(&self, _fields_in_prefix: u64, _type_map: &HashMap<TypeId,u8>) -> Vec<u8> {
+    fn serialize_prefix(&self, _fields_in_prefix: u64, _type_map: &TypeMap) -> Vec<u8> {
         panic!("Prefix serialization not supported for Option types");
     }
 
-    fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &HashMap<TypeId,u8>) {
+    fn serialize_into(&self, nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
         match self {
             Some(inner) => {
                 dest.push(1u8); // Prefix with a 1 byte to indicate Some
@@ -124,11 +126,11 @@ impl<T: VaultType> VaultType for Option<T> {
 
 impl VaultType for () {
     type InnerVaultType = ();
-    fn serialize_into(&self, _nested_dest: &mut Vec<(Vec<u8>, ValueId)>, _dest: &mut Vec<u8>, _type_map: &HashMap<TypeId,u8>) {
+    fn serialize_into(&self, _nested_dest: &mut Vec<(Vec<u8>, ValueId)>, _dest: &mut Vec<u8>, _type_map: &TypeMap) {
         return
     }
 
-    fn serialize_prefix(&self, _fields_in_prefix: u64, _type_map: &HashMap<TypeId,u8>) -> Vec<u8> {
+    fn serialize_prefix(&self, _fields_in_prefix: u64, _type_map: &TypeMap) -> Vec<u8> {
         vec![]
     }
 
