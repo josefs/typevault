@@ -1,14 +1,13 @@
 use proc_macro::TokenStream;
-use proc_macro2::Literal;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed, Type};
+use syn::*;
 use std::iter::zip;
 
 #[proc_macro_derive(VaultType)]
 pub fn replace_with_value_id(input: TokenStream) -> TokenStream {
   let input = parse_macro_input!(input as DeriveInput);
   let name = input.ident;
-  let new_name = syn::Ident::new(&format!("{}Fact", name), name.span());
+  let new_name = Ident::new(&format!("{}Fact", name), name.span());
 
   match input.data {
     Data::Enum(_) | Data::Union(_) => panic!("ReplaceWithValueId can only be used with structs"),
@@ -309,23 +308,23 @@ enum FieldsInfo {
   Unit,
 }
 struct NewNamedFieldsInfo {
-  field_names: Vec<syn::Ident>,
+  field_names: Vec<Ident>,
   field_types: Vec<Type>,
-  field_vars: Vec<syn::Ident>,
+  field_vars: Vec<Ident>,
   is_modified_field: Vec<bool>,
-  modified_fields: Vec<syn::Ident>,
+  modified_fields: Vec<Ident>,
   modified_field_types: Vec<Type>,
-  unmodified_fields: Vec<syn::Ident>,
+  unmodified_fields: Vec<Ident>,
 }
 
 struct NewUnnamedFieldsInfo {
-  field_indices: Vec<Literal>,
+  field_indices: Vec<Member>,
   field_types: Vec<Type>,
-  field_vars: Vec<syn::Ident>,
+  field_vars: Vec<Ident>,
   is_modified_field: Vec<bool>,
-  modified_field_indices: Vec<Literal>,
+  modified_field_indices: Vec<Member>,
   modified_field_types: Vec<Type>,
-  unmodified_field_indices: Vec<Literal>,
+  unmodified_field_indices: Vec<Member>,
 }
 
 fn convert_named_fields(named_fields: &FieldsNamed) -> NewNamedFieldsInfo {
@@ -375,8 +374,8 @@ fn convert_unnamed_fields(unnamed_fields: &FieldsUnnamed) -> NewUnnamedFieldsInf
   for (i, field) in unnamed_fields.unnamed.iter().enumerate() {
     let ty: &Type = &field.ty;
     // Don't know if the span here is correct. But I don't think it matters much.
-    // let index = syn::Ident::new(&format!("{}", i), proc_macro2::Span::call_site());
-    let index = proc_macro2::Literal::usize_unsuffixed(i);
+    let index = Member::Unnamed(Index{index: i as u32,
+      span: proc_macro2::Span::call_site()});
     field_indices.push(index.clone());
     field_vars.push(syn::Ident::new(&format!("field_{}", i), proc_macro2::Span::call_site()));
     if is_primitive_type(ty) {
