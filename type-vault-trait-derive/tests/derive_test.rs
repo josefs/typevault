@@ -1,7 +1,7 @@
 use type_vault_trait::*;
 use type_vault_trait_derive::VaultType;
 
-use std::{any::TypeId, collections::HashMap};
+use std::any::TypeId;
 
 use serde::{Deserialize, Serialize};
 use bincode;

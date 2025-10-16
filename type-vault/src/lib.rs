@@ -1,5 +1,4 @@
 use type_vault_trait::*;
-use std::collections::HashMap;
 use std::any::TypeId;
 
 pub struct TypeVault {
