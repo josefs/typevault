@@ -18,13 +18,15 @@ macro_rules! new_type_vault {
 
 impl TypeVault {
     pub fn new(path: &std::path::Path, type_ids: Vec<TypeId>) -> Self {
-        let db: sled::Db = sled::open(path).expect("Failed to open database");
-        let id_to_value_map = db.open_tree("id_to_value").expect("Failed to open id_to_value tree");
-        let value_to_id_map = db.open_tree("value_to_id").expect("Failed to open value_to_id tree");
-        let mut type_map = TypeMap::new(type_ids);
-        TypeVault { base_db: db
-            , id_to_value_map, value_to_id_map
-            , type_map
+        let base_db: sled::Db = sled::open(path).expect("Failed to open database");
+        let id_to_value_map = base_db.open_tree("id_to_value").expect("Failed to open id_to_value tree");
+        let value_to_id_map = base_db.open_tree("value_to_id").expect("Failed to open value_to_id tree");
+        let type_map = TypeMap::new(type_ids);
+        TypeVault {
+            base_db,
+            id_to_value_map,
+            value_to_id_map,
+            type_map,
         }
     }
 
