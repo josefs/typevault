@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::*;
-use std::iter::zip;
+use std::{iter::zip, vec};
 
 #[proc_macro_derive(VaultType)]
 pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -10,7 +10,216 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
   let new_name = Ident::new(&format!("{}Fact", name), name.span());
 
   match input.data {
-    Data::Enum(_) | Data::Union(_) => panic!("ReplaceWithValueId can only be used with structs"),
+    Data::Union(_) => panic!("VaultType can not be derived with unions."),
+    Data::Enum(enums) => {
+      let mut variant_names = Vec::new();
+      let mut variant_types = Vec::new();
+      let mut variant_patterns = Vec::new();
+      let mut modified_variant_field_types = Vec::new();
+      let mut serialize_into_fields = Vec::new();
+      let mut serialize_fields = Vec::new();
+      let mut all_field_vars = Vec::new();
+      let mut deserialize_fields = Vec::new();
+      let mut build_variants = Vec::new();
+      let mut assign_new_variants = Vec::new();
+
+      fn serialize_into_fields_fn(is_modified_field: &Vec<bool>, field_vars: &Vec<Ident>, pattern_vars: &Vec<Ident>) -> Vec<TokenStream> {
+        zip(is_modified_field, zip(field_vars, pattern_vars)).map(|(is_modified, (field_var, pattern_var))| {
+          if *is_modified {
+            quote! {
+              let mut dest_nested = vec![];
+              #pattern_var.serialize_into(nested_dest, &mut dest_nested, type_map);
+              let #field_var = value_id_of(&dest_nested);
+              nested_dest.push((dest_nested, #field_var));
+            }
+          } else {
+            quote! {
+              let #field_var = *#pattern_var;
+            }
+          }
+        }).collect()
+      }
+
+      fn serialize_fields_fn(is_modified_field: &Vec<bool>, pattern_vars: &Vec<Ident>) -> Vec<TokenStream> {
+        zip(is_modified_field, pattern_vars).map(|(is_modified, pattern_var)| {
+          if *is_modified {
+            quote! {
+              let mut dest = vec![];
+              // Ignore the nested fields. We only care about the hash.
+              #pattern_var.serialize_into(&mut vec![], &mut dest, type_map);
+              result.extend(bincode::serde::encode_to_vec(value_id_of(&dest), BINCODE_CONFIG).unwrap());
+            }
+          } else {
+            quote! {
+              result.extend(bincode::serde::encode_to_vec(#pattern_var, BINCODE_CONFIG).unwrap());
+            }
+          }
+        }).collect()
+      }
+
+      fn deserialize_fields_fn(name: &Ident, is_modified_fields: &Vec<bool>, field_vars: &Vec<Ident>, pattern_vars: &Vec<Ident>, field_types: &Vec<Type>, field_members: &Vec<Member>) -> Vec<TokenStream> {
+        zip(is_modified_fields, zip(field_vars, zip(pattern_vars, zip(field_types, field_members)))).map(|(is_modified, (field_var, (pattern_var, (field_type, field_member))))| {
+          if *is_modified {
+            quote! {
+              let nested_data = match lookup_id(#field_member) {
+                None => {
+                  eprintln!("Failed to look up ID {:?} for field {} of struct {}", new_struct.#field_member, stringify!(#field_member), stringify!(#name));
+                  return None
+                },
+                Some(data) => data,
+              };
+              let #field_var : #field_type = deserialize_type::<#field_type>(&nested_data, lookup_id)?;
+            }
+          } else {
+            quote! {
+              let #field_var = #pattern_var;
+            }
+          }
+        }).collect()
+      }
+
+      for variant in enums.variants {
+        let variant_name = variant.ident;
+        variant_names.push(variant_name.clone());
+        match variant.fields {
+          Fields::Unit => {
+            variant_types.push(quote! { #variant_name() });
+            variant_patterns.push(quote! { #variant_name() } );
+            serialize_into_fields.push(serialize_into_fields_fn(&vec![], &vec![], &vec![]));
+            all_field_vars.push(vec![]);
+            serialize_fields.push(serialize_fields_fn(&vec![], &vec![]));
+            deserialize_fields.push(vec![]);
+            build_variants.push(quote! {
+                Self::#variant_name ()
+            });
+            assign_new_variants.push(quote! {
+              #new_name::#variant_name()
+            })
+          },
+          Fields::Unnamed(unnamed_fields) => {
+            let NewFieldsInfo {
+              field_members,
+              field_types,
+              field_vars,
+              pattern_vars,
+              is_modified_field,
+              modified_field_types,
+              ..
+            } = convert_unnamed_fields(&new_name, &unnamed_fields);
+            variant_types.push(quote! { #variant_name ( #(#field_types),* ) });
+            variant_patterns.push(quote! { #variant_name ( #(#pattern_vars),* ) } );
+            modified_variant_field_types.extend(modified_field_types);
+            serialize_into_fields.push(serialize_into_fields_fn(&is_modified_field, &field_vars, &pattern_vars));
+            serialize_fields.push(serialize_fields_fn(&is_modified_field, &pattern_vars));
+            deserialize_fields.push(deserialize_fields_fn(&name, &is_modified_field, &field_vars, &pattern_vars, &field_types, &field_members));
+            all_field_vars.push(field_vars.clone());
+            build_variants.push(quote! {
+                Self::#variant_name ( #(#field_vars),* )
+            });
+            assign_new_variants.push(quote! {
+              #new_name::#variant_name ( #(#field_vars),* )
+            })
+          },
+          Fields::Named(named_fields) => {
+            let NewFieldsInfo {
+              field_members,
+              field_types,
+              field_vars,
+              pattern_vars,
+              is_modified_field,
+              modified_field_types,
+              ..
+            } = convert_named_fields(&new_name, &named_fields);
+            variant_types.push(quote! { #variant_name { #(#field_members : #field_types),* } });
+            variant_patterns.push(quote! { #variant_name { #(#field_members : #pattern_vars),* } } );
+            modified_variant_field_types.extend(modified_field_types);
+            serialize_into_fields.push(serialize_into_fields_fn(&is_modified_field, &field_vars, &pattern_vars));
+            serialize_fields.push(serialize_fields_fn(&is_modified_field, &pattern_vars));
+            deserialize_fields.push(deserialize_fields_fn(&name, &is_modified_field, &field_vars, &pattern_vars, &field_types, &field_members));
+            all_field_vars.push(field_vars.clone());
+            build_variants.push(quote! {
+                Self::#variant_name { #(#field_members : #field_vars),* }
+            });
+            assign_new_variants.push(quote!{
+              #new_name::#variant_name { #(#field_members : #field_vars),* }
+            }
+
+            )
+          }
+        }
+      }
+
+      let tokens = proc_macro::TokenStream::from(quote!{
+        #[derive(Serialize, Deserialize)]
+        pub enum #new_name {
+          #(#variant_types),*
+        }
+
+        impl VaultType for #name {
+          type InnerVaultType = (#new_name #(,#modified_variant_field_types)*);
+
+          fn serialize_into(&self, _nested_dest: &mut Vec<(Vec<u8>, ValueId)>, dest: &mut Vec<u8>, type_map: &TypeMap) {
+            dest.append(&mut type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned());
+            match self {
+              #(Self::#variant_patterns => {
+                #(
+                  #serialize_into_fields
+                )*
+                let variant = #assign_new_variants;
+                let mut serialized = match bincode::serde::encode_to_vec(&variant, BINCODE_CONFIG) {
+                  Ok(vec) => vec,
+                  Err(err) => panic!("bincode failed with: {:?}", err),
+                };
+                dest.append(&mut serialized);
+              }),*
+            }
+          }
+
+          fn serialize_prefix(&self, fields_in_prefix: u64, type_map: &TypeMap) -> Vec<u8> {
+            let mut result = type_map.get(&TypeId::of::<Self>()).expect("Type not registered in type map").to_owned();
+            match self {
+              #(Self::#variant_patterns => {
+                // TODO: We're not encoding the variant discriminator here. I need to look again at bincode.
+                let mut remaining_fields = fields_in_prefix;
+                #(
+                  if remaining_fields > 0 {
+                    #serialize_fields
+                  } else {
+                    return result;
+                  }
+                )*
+                result
+              }),*
+            }
+          }
+
+          fn deserialize_value<'a>(data: &'a [u8], lookup_id: &dyn Fn(ValueId) -> Option<Vec<u8>>) -> Option<(&'a [u8],Self)> where Self: Sized {
+            let (new_struct, bytes_consumed): (#new_name, _) =
+              //TODO: Check that the type ID matches
+              match bincode::serde::decode_from_slice(&data[1..], BINCODE_CONFIG) {
+                Err(_) => {
+                  eprintln!("Failed to decode struct of type {}, data: {:?}", stringify!(#new_name), &data);
+                  return None
+                },
+                Ok((strct, bytes_consumed)) => (strct, bytes_consumed),
+            };
+            match new_struct {
+              #(#new_name::#variant_patterns => {
+                #(
+                  #deserialize_fields
+                )*
+                Some((
+                  &data[bytes_consumed..],
+                  #build_variants
+                ))
+              }),*
+            }
+          }
+        }
+      });
+
+      tokens
+    },
     Data::Struct(data_struct) => {
       match data_struct.fields {
         Fields::Unit =>
@@ -34,7 +243,7 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
           ),
 
         Fields::Unnamed(unnamed_fields) => {
-          let NewUnnamedFieldsInfo {
+          let NewFieldsInfo {
             field_members,
             field_types,
             field_vars,
@@ -43,6 +252,7 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
             make_struct,
             assign_new_struct,
             build_struct,
+            ..
           } = convert_unnamed_fields(&new_name, &unnamed_fields);
 
           create_vault_type_instance_for_struct(&name,new_name, make_struct, &field_vars, field_types, &field_members,
@@ -53,7 +263,7 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
         },
 
         Fields::Named(named_fields) => {
-          let NewNamedFieldsInfo {
+          let NewFieldsInfo {
             field_members,
             field_types,
             field_vars,
@@ -62,6 +272,7 @@ pub fn replace_with_value_id(input: proc_macro::TokenStream) -> proc_macro::Toke
             make_struct,
             assign_new_struct,
             build_struct,
+            ..
           } = convert_named_fields(&new_name, &named_fields);
 
           create_vault_type_instance_for_struct(&name,new_name, make_struct, &field_vars, field_types, &field_members,
@@ -225,15 +436,11 @@ fn create_vault_type_instance_for_struct(
   )
 }
 
-enum FieldsInfo {
-  Named(NewNamedFieldsInfo),
-  Unnamed(NewUnnamedFieldsInfo),
-  Unit,
-}
-struct NewNamedFieldsInfo {
+struct NewFieldsInfo {
   field_members: Vec<Member>,
   field_types: Vec<Type>,
   field_vars: Vec<Ident>,
+  pattern_vars: Vec<Ident>,
   is_modified_field: Vec<bool>,
   modified_field_types: Vec<Type>,
   make_struct: TokenStream,
@@ -241,21 +448,11 @@ struct NewNamedFieldsInfo {
   build_struct: TokenStream,
 }
 
-struct NewUnnamedFieldsInfo {
-  field_members: Vec<Member>,
-  field_types: Vec<Type>,
-  field_vars: Vec<Ident>,
-  is_modified_field: Vec<bool>,
-  modified_field_types: Vec<Type>,
-  make_struct: TokenStream,
-  assign_new_struct: TokenStream,
-  build_struct: TokenStream,
-}
-
-fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewNamedFieldsInfo {
+fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewFieldsInfo {
   let mut field_members = Vec::new();
   let mut field_types = Vec::new();
   let mut field_vars = Vec::new();
+  let mut pattern_vars = Vec::new();
   let mut is_modified_field = Vec::new();
   let mut modified_fields = Vec::new();
   let mut modified_field_types = Vec::new();
@@ -268,7 +465,8 @@ fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewName
     let field_member = Member::Named(field.ident.as_ref().unwrap().clone());
     field_members.push(field_member);
     field_types.push(ty.clone());
-    field_vars.push(syn::Ident::new(&format!("var_{}", field.ident.as_ref().unwrap()), field.ident.as_ref().unwrap().span()));
+    field_vars.push(syn::Ident::new(&format!("field_{}", field.ident.as_ref().unwrap()), field.ident.as_ref().unwrap().span()));
+    pattern_vars.push(syn::Ident::new(&format!("pat_{}", field.ident.as_ref().unwrap()), field.ident.as_ref().unwrap().span()));
     if is_primitive_type(ty) {
       new_field_types.push(ty.clone());
       is_modified_field.push(false);
@@ -296,10 +494,11 @@ fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewName
       #(#field_members : #field_vars),*
     }
   };
-  NewNamedFieldsInfo {
+  NewFieldsInfo {
     field_members,
     field_types,
     field_vars,
+    pattern_vars,
     is_modified_field,
     modified_field_types,
     make_struct,
@@ -308,10 +507,11 @@ fn convert_named_fields(new_name: &Ident, named_fields: &FieldsNamed) -> NewName
   }
 }
 
-fn convert_unnamed_fields(new_name: &Ident, unnamed_fields: &FieldsUnnamed) -> NewUnnamedFieldsInfo {
+fn convert_unnamed_fields(new_name: &Ident, unnamed_fields: &FieldsUnnamed) -> NewFieldsInfo {
   let mut field_members = Vec::new();
   let mut field_types = Vec::new();
   let mut field_vars = Vec::new();
+  let mut pattern_vars = Vec::new();
   let mut is_modified_field = Vec::new();
   let mut modified_field_indices = Vec::new();
   let mut modified_field_types = Vec::new();
@@ -327,6 +527,7 @@ fn convert_unnamed_fields(new_name: &Ident, unnamed_fields: &FieldsUnnamed) -> N
     field_members.push(index.clone());
     field_types.push(ty.clone());
     field_vars.push(syn::Ident::new(&format!("field_{}", i), proc_macro2::Span::call_site()));
+    pattern_vars.push(syn::Ident::new(&format!("pat_{}", i), proc_macro2::Span::call_site()));
     if is_primitive_type(ty) {
       new_field_types.push(ty.clone());
       is_modified_field.push(false);
@@ -354,10 +555,11 @@ fn convert_unnamed_fields(new_name: &Ident, unnamed_fields: &FieldsUnnamed) -> N
       #(#field_vars),*
     )
   };
-  NewUnnamedFieldsInfo {
+  NewFieldsInfo {
     field_members,
     field_types,
     field_vars,
+    pattern_vars,
     is_modified_field,
     modified_field_types,
     make_struct,
